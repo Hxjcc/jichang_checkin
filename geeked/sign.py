@@ -4,15 +4,11 @@ import urllib.parse
 import binascii
 import json
 import re
-import requests
 
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 from Crypto.PublicKey.RSA import construct
 from Crypto.Cipher import PKCS1_v1_5
-from geeked.slide import SlideSolver
-from geeked.gobang import GobangSolver
-from geeked.icon import IconSolver
 
 class LotParser:
     def __init__(self):
@@ -215,28 +211,8 @@ function encrypt_asymmetric_2(input, key) {
             "lot_number": lot_number,
         }
 
-        if risk_type in ("ai", "invisible"):
-            pass
-        elif risk_type == "slide":
-            left = SlideSolver(
-                requests.get(f"https://static.geetest.com/{data['slice']}", timeout=10).content,
-                requests.get(f"https://static.geetest.com/{data['bg']}", timeout=10).content
-            ).find_puzzle_piece_position() + random.uniform(0, .5)
-            base |= {
-                "passtime": random.randint(600, 1200),  # time in ms it took to solve
-                "setLeft": left,
-                "userresponse": left / 1.0059466666666665 + 2  # 1.0059466666666665 = .8876 * 340 / 300
-            }
-        elif risk_type in ("winlinze", "gobang"):
-            base |= {
-                "userresponse": GobangSolver(data["ques"]).find_four_in_line()
-            }
-        elif risk_type in 'icon':
-            base |= {
-                "passtime": random.randint(600, 1200),  # time in ms it took to solve
-                "userresponse": IconSolver(data["imgs"], data["ques"]).find_icon_position()
-            }
-        else:
+        if risk_type not in ("ai", "invisible"):
             raise NotImplementedError(f"This type ({risk_type}) of captcha is not implemented yet.")
 
         return Signer.encrypt_w(json.dumps(base), data["pt"])
+
