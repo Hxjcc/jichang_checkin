@@ -1,4 +1,6 @@
-import requests, json, re, os
+import requests, json, re, os, sys
+from geeked import Geeked
+
 # 机场的地址
 url = os.environ.get('URL')
 # 配置用户名（一般是邮箱）
@@ -7,27 +9,63 @@ config = os.environ.get('CONFIG')
 # server酱
 SCKEY = os.environ.get('SCKEY')
 
+# GeeTest V4 验证码 ID（从 ikuuu.org 提取）
+CAPTCHA_ID = 'cc96d05ba8b60f9112f76e18526fcb73'
+
 login_url = '{}/auth/login'.format(url)
 check_url = '{}/user/checkin'.format(url)
 
+def solve_captcha():
+        """使用 GeekedTest 求解 GeeTest V4 验证码（纯 Python，无需浏览器）"""
+        try:
+                geeked = Geeked(CAPTCHA_ID, 'ai')
+                result = geeked.solve()
+                print('验证码求解成功')
+                return result
+        except Exception as ex:
+                print(f'验证码求解失败: {ex}')
+                return None
+
 def sign(order,user,pwd):
         session = requests.session()
-        global url,SEKEY
+        global url,SCKEY
         header = {
         'origin': url,
         'user-agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36'
         }
-        data = {
-        'email': user,
-        'passwd': pwd
-        }
         try:
                 print(f'===账号{order}进行登录...===')
                 print(f'账号：{user}')
+
+                # 求解 GeeTest V4 验证码
+                captcha = solve_captcha()
+                if captcha is None:
+                        print('验证码求解失败，跳过此账号')
+                        return
+
+                data = {
+                'email': user,
+                'passwd': pwd,
+                'captcha_result[lot_number]': captcha['lot_number'],
+                'captcha_result[captcha_output]': captcha['captcha_output'],
+                'captcha_result[pass_token]': captcha['pass_token'],
+                'captcha_result[gen_time]': captcha['gen_time'],
+                }
+
                 res = session.post(url=login_url,headers=header,data=data).text
                 print(res)
                 response = json.loads(res)
                 print(response['msg'])
+
+                if response.get('ret') != 1:
+                        print(f'登录失败: {response["msg"]}')
+                        content = f'登录失败: {response["msg"]}'
+                        if SCKEY != '':
+                                push_url = 'https://sctapi.ftqq.com/{}.send?title=机场签到&desp={}'.format(SCKEY, content)
+                                requests.post(url=push_url)
+                                print('推送成功')
+                        return
+
                 # 进行签到
                 res2 = session.post(url=check_url,headers=header).text
                 print(res2)
@@ -59,4 +97,3 @@ if __name__ == '__main__':
                 user = configs[i*2]
                 pwd = configs[i*2+1]
                 sign(i,user,pwd)
-        
