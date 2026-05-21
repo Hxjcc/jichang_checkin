@@ -1,4 +1,4 @@
-import requests, json, re, os, sys, time
+import requests, json, os, time
 from geeked import Geeked
 
 # 机场的地址

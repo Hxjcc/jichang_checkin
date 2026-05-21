@@ -6,7 +6,6 @@ from geeked.sign import Signer
 
 class Geeked:
     def __init__(self, captcha_id: str, risk_type: str, **kwargs):
-        self.pass_token = None
         self.lot_number = None
         self.captcha_id = captcha_id
         self.challenge = str(uuid4())

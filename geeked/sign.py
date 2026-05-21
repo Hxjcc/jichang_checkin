@@ -102,23 +102,6 @@ class Signer:
 
         return encrypted_hex
 
-    """ ill implement it when needed
-function encrypt_asymmetric_2(input, key) {
-	void 0 === key && (key = '9a4ea935b2576f37516d9b29cd8d8cc9bffe548ba6853253ba20f4ba44fba8c9e97a398882769aa0dd1e3e1b5601429287303880ca17bd244ed73bf702a68fc7');
-	var moreargs = 2 < arguments['length'] && arguments[2] !== undefined ? arguments[2] : 1;
-	var encryptor = new _ᖉᖉᕾᖉ;
-
-	input = sortaGlobals['hexToArray'](sortaGlobals['parseUtf8StringToHex'](input)), 128 < key['length'] && (key = key['substr'](key['length'] - 128));
-	var keyLeft = key['substr'](0, 64), keyRest = key['substr'](64);
-	key = encryptor['createPoint'](keyLeft, keyRest);
-	var initCypher = encryptor['initEncipher'](key);
-	encryptor['encryptBlock'](input);
-	var end = sortaGlobals['arrayToHex'](input);
-	emptyArray = new Array(32);
-	return encryptor['doFinal'](emptyArray), emptyArray = sortaGlobals['arrayToHex'](emptyArray), 0 === moreargs ? initCypher + end + emptyArray : initCypher + emptyArray + end
-}
-    """
-
     @staticmethod
     def encrypt_w(raw_input, pt) -> str:
         if not pt or '0' == pt:
