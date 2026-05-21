@@ -4,6 +4,7 @@ import urllib.parse
 import binascii
 import json
 import re
+import time
 
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
@@ -177,13 +178,18 @@ function encrypt_asymmetric_2(input, key) {
     def generate_w(data: dict, captcha_id: str, risk_type: str):
         lot_number = data['lot_number']
         pow_detail = data['pow_detail']
+        # 生成随机 device_id（模拟真实浏览器指纹）
+        device_id = hashlib.md5(f"{lot_number}{time.time()}{random.random()}".encode()).hexdigest()[:32]
+        # 生成动态 ep 值（模拟真实页面加载时间）
+        ep_time = str(int(time.time() * 1000))
+
         abo = {"UR4S":"wjDO"}
         base = abo | {
             **Signer.generate_pow(lot_number, captcha_id, pow_detail['hashfunc'], pow_detail['version'],
                                   pow_detail['bits'], pow_detail['datetime'], ""),
             **lotParser.get_dict(lot_number),
             "biht": "1426265548",  # static
-            "device_id": "",  # why is this empty!!
+            "device_id": device_id,
             "em": {  # save to have this static (see em.js)
                 "cp": 0,  # checkCallPhantom
                 "ek": "11",  # checkErrorKeys "11" as value is also fine
@@ -191,7 +197,7 @@ function encrypt_asymmetric_2(input, key) {
                 "ph": 0,  # checkPhantom
                 "sc": 0,  # checkSeleniumMarker
                 "si": 0,  # checkScriptFn
-                "wd": 1,  # checkWebDriver
+                "wd": 0,  # checkWebDriver - 0 表示未检测到 WebDriver
             },
             "gee_guard": {
                 "roe": {  # "3" = no | "1" = yes
@@ -205,7 +211,7 @@ function encrypt_asymmetric_2(input, key) {
                     "snh": "3",  # HEADCHR_PERMISSIONS   | checks browser version etc.
                 }
             },
-            "ep": "123",  # static
+            "ep": ep_time,
             "geetest": "captcha",  # static
             "lang": "zh",  # static
             "lot_number": lot_number,

@@ -1,4 +1,4 @@
-import requests, json, re, os, sys
+import requests, json, re, os, sys, time
 from geeked import Geeked
 
 # 机场的地址
@@ -15,16 +15,25 @@ CAPTCHA_ID = 'cc96d05ba8b60f9112f76e18526fcb73'
 login_url = '{}/auth/login'.format(url)
 check_url = '{}/user/checkin'.format(url)
 
+MAX_RETRIES = 3
+
 def solve_captcha():
-        """使用 GeekedTest 求解 GeeTest V4 验证码（纯 Python，无需浏览器）"""
-        try:
-                geeked = Geeked(CAPTCHA_ID, 'ai')
-                result = geeked.solve()
-                print('验证码求解成功')
-                return result
-        except Exception as ex:
-                print(f'验证码求解失败: {ex}')
-                return None
+        """使用 GeekedTest 求解 GeeTest V4 验证码（纯 Python，无需浏览器），支持重试"""
+        for attempt in range(1, MAX_RETRIES + 1):
+                try:
+                        print(f'验证码求解尝试 {attempt}/{MAX_RETRIES}...')
+                        geeked = Geeked(CAPTCHA_ID, 'ai')
+                        result = geeked.solve()
+                        print('验证码求解成功')
+                        return result
+                except Exception as ex:
+                        print(f'验证码求解失败 (尝试 {attempt}/{MAX_RETRIES}): {ex}')
+                        if attempt < MAX_RETRIES:
+                                wait = 2
+                                print(f'等待 {wait} 秒后重试...')
+                                time.sleep(wait)
+        print('所有重试均失败')
+        return None
 
 def sign(order,user,pwd):
         session = requests.session()
