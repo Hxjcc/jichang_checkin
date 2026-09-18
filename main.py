@@ -21,11 +21,14 @@ SCKEY = os.environ.get('SCKEY')
 # 邮箱 IMAP 配置：站点要求登录邮箱验证码时，用它自动读取邮件里的 8 位验证码
 MAIL_AUTHCODE = os.environ.get('MAIL_AUTHCODE') or ''
 MAIL_USER = os.environ.get('MAIL_USER') or ''
+MAIL_SENDER = os.environ.get('MAIL_SENDER') or 'no-reply@ikuuu.cc'
 IMAP_HOST = os.environ.get('IMAP_HOST') or ''
 IMAP_PORT = int(os.environ.get('IMAP_PORT') or '993')
 IMAP_FOLDER = os.environ.get('IMAP_FOLDER') or 'INBOX'
 EMAIL_CODE_TIMEOUT = int(os.environ.get('EMAIL_CODE_TIMEOUT') or '180')
 EMAIL_CODE_POLL_INTERVAL = int(os.environ.get('EMAIL_CODE_POLL_INTERVAL') or '5')
+# 在这个时间内只认发件人匹配的邮件，超时后再放宽，兼容站点更换发信地址
+MAIL_SENDER_RELAX_SECONDS = 60
 
 # GeeTest V4 验证码 ID（从 ikuuu.org 提取）
 CAPTCHA_ID = 'cc96d05ba8b60f9112f76e18526fcb73'
@@ -160,8 +163,32 @@ def message_time(message):
         return None
 
 
-def code_from_message(imap, msg_id, not_before):
-    """读取单封邮件并提取验证码，忽略发送时间过旧的邮件。"""
+def sender_tokens():
+    """用来判断邮件是否来自本站：默认发件人 + 站点域名（含二级域名）。"""
+    tokens = []
+    if MAIL_SENDER:
+        tokens.append(MAIL_SENDER.lower())
+    host = urlparse(url).netloc.lower().split(':')[0] if url else ''
+    if host:
+        tokens.append(host)
+        label = host.split('.')[0]
+        # 站点域名和发信域名不一定相同，例如 ikuuu.org 用 no-reply@ikuuu.cc 发信
+        if len(label) >= 4:
+            tokens.append(label)
+    return [t for t in tokens if t]
+
+
+def sender_matches(message):
+    """检查邮件的 From 是否属于本站。"""
+    tokens = sender_tokens()
+    if not tokens:
+        return True
+    sender = decode_header_value(message.get('From')).lower()
+    return any(token in sender for token in tokens)
+
+
+def code_from_message(imap, msg_id, not_before, require_sender=True):
+    """读取单封邮件并提取验证码，忽略发送时间过旧或发件人不符的邮件。"""
     typ, data = imap.fetch(msg_id, '(BODY.PEEK[])')
     if typ != 'OK' or not data or not isinstance(data[0], tuple):
         return None
@@ -170,8 +197,48 @@ def code_from_message(imap, msg_id, not_before):
     # 只接受本次登录前后收到的邮件，避免误用上次登录的旧验证码
     if sent_at is not None and sent_at < not_before - 300:
         return None
+    if require_sender and not sender_matches(message):
+        return None
     subject = decode_header_value(message.get('Subject'))
     return extract_email_code(subject + '\n' + message_text(message))
+
+
+def junk_folders(imap):
+    """通过 IMAP 的 \\Junk / \\Spam 标记找出垃圾邮件目录，避免验证码被误拦。"""
+    names = []
+    try:
+        typ, data = imap.list()
+    except Exception:
+        return names
+    if typ != 'OK':
+        return names
+    for raw in data or []:
+        line = raw.decode('utf-8', errors='ignore') if isinstance(raw, bytes) else str(raw)
+        if not re.search(r'\\(Junk|Spam)\b', line, re.IGNORECASE):
+            continue
+        match = re.search(r'"([^"]*)"\s*$', line.strip())
+        name = match.group(1) if match else line.split()[-1].strip('"')
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def scan_folder(imap, folder, since, checked, not_before, require_sender):
+    """在指定邮件目录里查找本次登录的验证码。"""
+    typ, _ = imap.select(folder, readonly=True)
+    if typ != 'OK':
+        return None
+    typ, data = imap.search(None, 'SINCE', since)
+    msg_ids = data[0].split() if data and data[0] else []
+    for msg_id in reversed(msg_ids[-40:]):
+        key = (folder, msg_id, require_sender)
+        if key in checked:
+            continue
+        checked.add(key)
+        code = code_from_message(imap, msg_id, not_before, require_sender)
+        if code:
+            return code
+    return None
 
 
 def open_mailbox(host, user, authcode):
@@ -201,6 +268,8 @@ def fetch_email_code(mailbox, not_before):
 
     checked = set()
     since = time.strftime('%d-%b-%Y', time.localtime(not_before - 86400))
+    folders = [IMAP_FOLDER]
+    junk_loaded = False
     imap = None
     try:
         # 保持一条 IMAP 连接轮询，避免反复登录被邮箱服务商限流
@@ -208,13 +277,16 @@ def fetch_email_code(mailbox, not_before):
             try:
                 if imap is None:
                     imap = open_mailbox(host, user, MAIL_AUTHCODE)
-                typ, data = imap.search(None, 'SINCE', since)
-                msg_ids = data[0].split() if data and data[0] else []
-                for msg_id in reversed(msg_ids[-40:]):
-                    if msg_id in checked:
-                        continue
-                    checked.add(msg_id)
-                    code = code_from_message(imap, msg_id, not_before)
+                if not junk_loaded:
+                    junk_loaded = True
+                    for folder in junk_folders(imap):
+                        if folder not in folders:
+                            folders.append(folder)
+                            print('同时检查垃圾邮件目录: {}'.format(folder))
+                # 先只认本站发件人；过了等待窗口仍没收到，再放宽到全部邮件
+                require_sender = (time.time() - not_before) < MAIL_SENDER_RELAX_SECONDS
+                for folder in folders:
+                    code = scan_folder(imap, folder, since, checked, not_before, require_sender)
                     if code:
                         print('已读取到邮箱验证码')
                         return code
