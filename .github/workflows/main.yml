@@ -54,5 +54,9 @@ jobs:
           EMAIL: ${{ secrets.EMAIL }}
           PASSWD: ${{ secrets.PASSWD }}
           CONFIG: ${{ secrets.CONFIG }}
+          # 站点要求登录邮箱验证码时，用 IMAP 自动读取 8 位验证码
+          MAIL_AUTHCODE: ${{ secrets.MAIL_AUTHCODE }}
+          MAIL_USER: ${{ secrets.MAIL_USER }}
+          IMAP_HOST: ${{ secrets.IMAP_HOST }}
         run: |
           python3 ./main.py
