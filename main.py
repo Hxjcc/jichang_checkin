@@ -134,6 +134,23 @@ def login_succeeded(response):
     )
 
 
+def trace_captcha_errors():
+    """验证码接口解析失败时打印原始返回，避免只看到 KeyError: 'data'。"""
+    original = Geeked.format_response
+    if getattr(original, '_trace_installed', False):
+        return
+
+    def traced(self, response):
+        try:
+            return original(self, response)
+        except Exception:
+            print('验证码接口返回异常，原始内容: {}'.format(response[:400]))
+            raise
+
+    traced._trace_installed = True
+    Geeked.format_response = traced
+
+
 class ClickSolver:
     """把本地求解器的坐标接到 geeked 的「点击类」载荷分支上。
 
@@ -161,6 +178,7 @@ def solve_captcha():
         print('本地求解器不可用（{}），回退无感模式'.format(ex))
         return Geeked(CAPTCHA_ID, 'ai').solve()
 
+    trace_captcha_errors()
     geeked_sign.IconSolver = ClickSolver
     loads = 0
     solves = 0
@@ -177,9 +195,11 @@ def solve_captcha():
         # 万一站点改回无感验证（不下发 icon/nine/word 等交互类型），
         # 仍按原来的无感方式提交这一张，不必等重试耗尽
         if captcha_type in (None, 'ai', 'invisible'):
-            client.risk_type = 'ai'
+            solves += 1
             try:
-                seccode = client.submit_captcha(data)
+                # lot_number 与 load 时的 risk_type 绑定，必须用 ai 身份重新取一张再提交，
+                # 否则服务端会回 -50303 illegal lot_number
+                seccode = Geeked(CAPTCHA_ID, 'ai').solve()
                 print('无感验证通过（第 {} 张）'.format(loads))
                 return seccode
             except Exception as ex:
