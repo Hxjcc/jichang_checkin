@@ -23,7 +23,8 @@ jobs:
       - name: Set up python
         uses: actions/setup-python@v6
         with:
-          python-version: 3.10.16
+          # ubuntu-latest 已升级到 26.04，官方不再提供 3.10.x 的构建，改用 3.12
+          python-version: '3.12'
 
       - name: Install dependencies
         run: |
